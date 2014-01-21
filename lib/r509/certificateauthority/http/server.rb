@@ -22,13 +22,16 @@ module R509
 
           crls = {}
           certificate_authorities = {}
+          ca_option_builders = {}
           config_pool.names.each do |name|
             crls[name] = R509::CRL::Administrator.new(config_pool[name])
             certificate_authorities[name] = R509::CertificateAuthority::Signer.new(config_pool[name])
+            ca_option_builders[name] = R509::CertificateAuthority::OptionsBuilder.new(config_pool[name])
           end
 
           set :crls, crls
           set :certificate_authorities, certificate_authorities
+          set :ca_option_builders, ca_option_builders
           set :subject_parser, R509::CertificateAuthority::HTTP::SubjectParser.new
           set :validity_period_converter, R509::CertificateAuthority::HTTP::ValidityPeriodConverter.new
           set :csr_factory, R509::CertificateAuthority::HTTP::Factory::CSRFactory.new
@@ -45,6 +48,9 @@ module R509
           end
           def ca(name)
             settings.certificate_authorities[name]
+          end
+          def ca_option_builder(name)
+            settings.ca_option_builders[name]
           end
           def subject_parser
             settings.subject_parser
@@ -143,7 +149,7 @@ module R509
 
           if params.has_key?("csr")
             csr = csr_factory.build(:csr => params["csr"])
-            cert = ca(params["ca"]).sign(
+            scrubbed_data = ca_option_builder(params["ca"]).build_and_enforce(
               :csr => csr,
               :profile_name => params["profile"],
               :subject => subject,
@@ -151,9 +157,10 @@ module R509
               :not_before => validity_period[:not_before],
               :not_after => validity_period[:not_after]
             )
+            cert = ca(params["ca"]).sign(scrubbed_data)
           elsif params.has_key?("spki")
             spki = spki_factory.build(:spki => params["spki"], :subject => subject)
-            cert = ca(params["ca"]).sign(
+            scrubbed_data = ca_option_builder(params["ca"]).build_and_enforce(
               :spki => spki,
               :profile_name => params["profile"],
               :subject => subject,
@@ -161,6 +168,7 @@ module R509
               :not_before => validity_period[:not_before],
               :not_after => validity_period[:not_after]
             )
+            cert = ca(params["ca"]).sign(scrubbed_data)
           else
             raise ArgumentError, "Must provide a CSR or SPKI"
           end
